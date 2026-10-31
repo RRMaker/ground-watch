@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ground-watch: is the ground under Frisco moving?</title>
+<meta name="description" content="Ten years of NASA satellite radar, turned into a neighbourhood map of ground motion in Frisco, Texas, checked against Houston.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --stone: #e7eae8;      
+    --paper: #f6f7f5;      
+    --ink: #1e2b2f;        
+    --ink-soft: #55656a;   
+    --rule: #c9cfcc;      
+    --brass: #9a7425;     
+    --sink: #b2182b;      
+    --rise: #2166ac;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--stone); color: var(--ink);
+    font: 400 17px/1.55 "Archivo", system-ui, sans-serif;
+    font-variation-settings: "wdth" 100;
+  }
+  a { color: var(--ink); text-decoration-color: var(--brass); text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+
+  header { padding: 28px 24px 18px; max-width: 1280px; margin: 0 auto; }
+  h1 {
+    margin: 0; font-weight: 750; font-size: clamp(30px, 5vw, 52px); line-height: 1.02;
+    font-variation-settings: "wdth" 125; letter-spacing: -0.01em;
+  }
+  .lede { margin: 10px 0 0; max-width: 62ch; color: var(--ink-soft); font-size: 18px; }
+
+  .workspace {
+    max-width: 1280px; margin: 0 auto; padding: 0 24px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 0;
+    border: 1px solid var(--rule); background: var(--paper);
+  }
+  #map { height: min(76vh, 760px); min-height: 420px; background: #dfe3e1; }
+  .leaflet-tile-pane { filter: grayscale(1) contrast(0.9) brightness(1.05); }  
+  .leaflet-image-layer { image-rendering: pixelated; }  
+  .leaflet-container { font: inherit; }
+
+  aside { border-left: 1px solid var(--rule); padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .controls { display: grid; gap: 12px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink); }
+  .seg button {
+    font: inherit; font-size: 15px; padding: 7px 8px; border: 0; background: transparent; color: var(--ink); cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--ink); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .seg small { display: block; font-size: 12px; opacity: 0.75; }
+  .row { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+  .row input[type="range"] { flex: 1; accent-color: var(--ink); }
+  .row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ink); }
+  .hint { margin: -6px 0 0 28px; font-size: 13px; color: var(--ink-soft); }
+  form.search { display: flex; }
+  form.search input {
+    flex: 1; min-width: 0; font: inherit; font-size: 15px; padding: 8px 10px;
+    border: 1px solid var(--ink); border-right: 0; background: #fff; color: var(--ink);
+  }
+  form.search button { font: inherit; font-size: 15px; padding: 8px 12px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); cursor: pointer; }
+
+  .legend { font-size: 13px; color: var(--ink-soft); }
+  .legend .bar { height: 10px; margin: 4px 0 2px; border: 1px solid var(--rule); }
+  .legend .ends { display: flex; justify-content: space-between; }
+
+  .reading { border-top: 1px solid var(--rule); padding-top: 14px; min-height: 260px; }
+  .reading .place { font-size: 13px; color: var(--ink-soft); margin: 0 0 4px; }
+  .reading .verdict {
+    margin: 0; font-size: 21px; line-height: 1.25; font-weight: 650; font-variation-settings: "wdth" 112;
+  }
+  .reading .verdict b { font-variant-numeric: tabular-nums; }
+  .reading .verdict.sink b { color: var(--sink); }
+  .reading .verdict.rise b { color: var(--rise); }
+  .reading .detail { margin: 8px 0 0; font-size: 14px; color: var(--ink-soft); }
+  .reading svg { display: block; width: 100%; height: auto; margin-top: 10px; }
+  .reading .empty { color: var(--ink-soft); margin: 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .fine { font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+
+  main.notes { max-width: 1280px; margin: 0 auto; padding: 40px 24px 64px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 56px; }
+  main.notes section { max-width: 64ch; }
+  h2 { font-size: 24px; line-height: 1.15; margin: 0 0 10px; font-weight: 700; font-variation-settings: "wdth" 118; }
+  main.notes p, main.notes li { margin: 0 0 10px; }
+  main.notes ul { padding-left: 1.1em; margin: 0 0 10px; }
+  footer { max-width: 1280px; margin: 0 auto; padding: 0 24px 40px; font-size: 14px; color: var(--ink-soft); }
+
+  @media (max-width: 900px) {
+    .workspace { grid-template-columns: 1fr; padding: 0; border-left: 0; border-right: 0; }
+    aside { border-left: 0; border-top: 1px solid var(--rule); }
+    #map { height: 62vh; min-height: 360px; }
+    main.notes { grid-template-columns: 1fr; }
+    header { padding: 22px 16px 14px; }
+    main.notes, footer { padding-left: 16px; padding-right: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Is the ground under Frisco moving?</h1>
+  <p class="lede">Ten years of satellite radar from NASA's OPERA project, measured every few weeks
+    since 2016, turned into a neighbourhood map. Click anywhere to see how the ground there has
+    moved compared with the area around it.</p>
+</header>
+
+<div class="workspace">
+  <div id="map" role="region" aria-label="Map of ground motion"></div>
+  <aside>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Area">
+        <button type="button" data-region="frisco" aria-pressed="true">Frisco<small>the project</small></button>
+        <button type="button" data-region="houston" aria-pressed="false">Houston<small>the check</small></button>
+      </div>
+      <form class="search" role="search">
+        <label for="q" class="sr-only">Address or place</label>
+        <input id="q" type="search" placeholder="Search an address" autocomplete="street-address">
+        <button type="submit">Find</button>
+      </form>
+      <label class="row"><input type="checkbox" id="tilt"> Remove smooth tilt</label>
+      <p class="hint">Hides slow area-wide slopes, which can be measurement error but can also be real. Patterns that show up both ways are the most reliable.</p>
+      <label class="row">Map colour <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.75" aria-label="Map colour strength"></label>
+      <div class="legend" aria-hidden="true">
+        <div class="bar" id="legend-bar"></div>
+        <div class="ends"><span id="legend-lo">sinking faster</span><span>same</span><span id="legend-hi">rising</span></div>
+      </div>
+    </div>
+
+    <div class="reading" id="reading" aria-live="polite">
+      <p class="empty">Click the map or search an address to see how the ground there has moved.</p>
+    </div>
+    <p class="fine" id="period"></p>
+  </aside>
+</div>
+
+<main class="notes">
+  <section>
+    <h2>What the colours mean</h2>
+    <p>Each coloured square is 30 by 30 metres (90 in Houston, which covers a much bigger area). Red areas have been moving down faster than the
+      area's typical ground, and blue areas have been moving up or sinking more slowly. Pale areas
+      move about the same as everything around them. Blank areas are water, fields or trees, where
+      the radar signal is too scattered to measure reliably.</p>
+    <p>When you click, the reading uses the whole block of ground around that point (about 450 m
+      across in Frisco, 900 m in Houston), not a single square. Single squares are noisy; blocks are much steadier.</p>
+  </section>
+
+  <section>
+    <h2>What this map can't tell you</h2>
+    <ul>
+      <li><strong>Whether all of Frisco is sinking or rising.</strong> Every reading is compared with
+        the area's typical motion, because the satellite's own reference point is far away and
+        shifts the whole area up and down by centimetres from pass to pass.</li>
+      <li><strong>Anything about a single house.</strong> These are neighbourhood trends. Cracks in a
+        foundation can have many causes this data can't see.</li>
+      <li><strong>Why the ground moved.</strong> Groundwater pumping, clay soils, new construction and
+        settling fill can all move the ground. This map shows where and how much, not why.</li>
+      <li><strong>Purely up-and-down motion.</strong> The satellite looks at the ground at a slant, so
+        it measures mostly vertical motion with a little east-west motion mixed in.</li>
+      <li><strong>Differences smaller than about 1.5 mm a year.</strong> Below that, the reading says
+        the ground moves about the same as its surroundings.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>How I checked it on Houston</h2>
+    <p>Houston's suburbs are one of the best-studied sinking areas in the US. Researchers at the
+      University of Houston found the north, northwest and west, including Katy, Spring and The
+      Woodlands, sinking up to about 2 cm a year, while downtown and the southeast mostly stopped
+      decades ago when groundwater pumping was limited.</p>
+    <p>Before looking at my Houston map, I wrote down what it had to show to pass: more sinking in
+      the northwest and north than downtown and the southeast. Switch to Houston above to see it. The
+      strongest sinking sits just west of the Addicks and Barker reservoirs, near Katy, and the
+      pattern matches NASA's own displacement portal for the same satellite track.</p>
+    <p>The first version failed in an instructive way: with only 2.5 years of data, Houston's humid
+      air added smooth fake patterns several millimetres a year strong. Using the full record back to
+      2016 fixed that, which is why both maps use ten years.</p>
+    <p>One change I made after seeing results: I had planned to show the tilt-removed map as the
+      main one if Katy still stood out with the tilt removed. It did, but removing the tilt also
+      erased the broad northwest-Houston sinking that the research documents, so it removes real
+      signal too. The plain map is the default and the tilt-removed one is a toggle.</p>
+  </section>
+
+  <section>
+    <h2>Where the data comes from</h2>
+    <p>The measurements are NASA's <a href="https://www.earthdata.nasa.gov/data/projects/nsite/solutions/opera-north-america-disp-product-suite">OPERA surface displacement product</a>
+      (DISP-S1), made by NASA JPL from the European Space Agency's Sentinel-1 radar satellites and
+      distributed by the <a href="https://asf.alaska.edu/">Alaska Satellite Facility</a>.</p>
+    <p>My code downloads each pass, cuts out the area, keeps only the pixels OPERA marks as
+      reliable, links the separate data batches into one ten-year record, removes the area-wide
+      shift on each date, and fits a yearly trend plus a seasonal swing to every pixel. The seasonal
+      term matters here because North Texas clay swells when wet and shrinks when dry.</p>
+    <p><a id="repo" href="#">Code and full method on GitHub</a></p>
+  </section>
+</main>
+
+<footer>
+  <p>Ground-motion data: NASA JPL OPERA, contains modified Copernicus Sentinel data, via ASF DAAC.
+    Base map © OpenStreetMap contributors. Address search by OpenStreetMap Nominatim.
+    This is a student project, not an engineering survey.</p>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const REPO_URL = "https://github.com/RRMaker/ground-watch";
+
+const SAME = 1.5;  
+const state = { meta: null, region: "frisco", version: "plain", cells: {}, overlay: null, box: null, last: null };
+
+document.getElementById("repo").href = REPO_URL;
+const map = L.map("map", { zoomControl: true, attributionControl: true });
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
+const $ = (id) => document.getElementById(id);
+const reading = $("reading");
+
+function legendBar(limit) {
+  const stops = ["#67001f","#b2182b","#d6604d","#f4a582","#fddbc7","#f7f7f7","#d1e5f0","#92c5de","#4393c3","#2166ac","#053061"];
+  $("legend-bar").style.background = `linear-gradient(90deg, ${stops.join(",")})`;
+  $("legend-lo").textContent = `−${limit} mm/yr, sinking faster`;
+  $("legend-hi").textContent = `rising, +${limit}`;
+}
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  return r.json();
+}
+
+async function cellsFor(region, version) {
+  const key = region + "/" + version;
+  if (!state.cells[key]) {
+    const file = state.meta.regions[region].versions[version].cells;
+    state.cells[key] = await getJSON("data/" + file);
+  }
+  return state.cells[key];
+}
+
+function showRegion(region, fit = true) {
+  state.region = region;
+  const info = state.meta.regions[region];
+  if (!info.versions[state.version]) state.version = Object.keys(info.versions)[0];
+  $("tilt").checked = state.version === "tilt";
+  const url = "data/" + info.versions[state.version].overlay;
+  if (state.overlay) map.removeLayer(state.overlay);
+  state.overlay = L.imageOverlay(url, info.bounds, { opacity: +$("opacity").value, alt: "Coloured ground-motion map" }).addTo(map);
+  if (fit) map.fitBounds(info.bounds);
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.region === region)));
+  $("tilt").disabled = Object.keys(info.versions).length < 2;
+  $("period").textContent = `${info.label}: ${fmtDate(info.start)} to ${fmtDate(info.end)}, satellite frame ${info.frame}.`;
+  $("q").placeholder = region === "frisco" ? "Search an address in Frisco" : "Search an address in Houston";
+  if (state.box) { map.removeLayer(state.box); state.box = null; }
+  reading.innerHTML = '<p class="empty">Click the map or search an address to see how the ground there has moved.</p>';
+  state.last = null;
+}
+
+function fmtDate(iso) {
+  return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+function nearestCell(data, lat, lon) {
+  const k = Math.cos(lat * Math.PI / 180);
+  let best = null, bestD = Infinity;
+  for (const c of data.cells) {
+    const dy = (c[0] - lat) * 111320, dx = (c[1] - lon) * 111320 * k;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best && Math.sqrt(bestD) <= data.cell_m * 0.75 ? best : null;
+}
+
+function years(dates) {
+  const t0 = Date.parse(dates[0]);
+  return dates.map((d) => (Date.parse(d) - t0) / (365.25 * 864e5));
+}
+
+function chart(dates, series, rate) {
+  const W = 340, H = 170, L = 36, R = 8, T = 10, B = 24;
+  const t = years(dates), span = t[t.length - 1];
+  const lo = Math.min(...series), hi = Math.max(...series);
+  const pad = Math.max(4, (hi - lo) * 0.1), y0 = lo - pad, y1 = hi + pad;
+  const X = (v) => L + (v / span) * (W - L - R);
+  const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  const meanT = t.reduce((a, b) => a + b, 0) / t.length;
+  const meanY = series.reduce((a, b) => a + b, 0) / series.length;
+  const b0 = meanY - rate * meanT;
+  const col = rate <= -SAME ? "var(--sink)" : rate >= SAME ? "var(--rise)" : "var(--ink)";
+  const step = (y1 - y0) > 60 ? 20 : (y1 - y0) > 25 ? 10 : 5;
+  let ticks = "";
+  for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) {
+    ticks += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 0 ? "#9aa5a2" : "#dde1df"}"/>` +
+             `<text x="${L - 5}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  const firstYear = new Date(dates[0]).getUTCFullYear(), lastYear = new Date(dates[dates.length - 1]).getUTCFullYear();
+  for (let yr = firstYear + 1; yr <= lastYear; yr += 2) {
+    const tv = (Date.UTC(yr, 0, 1) - Date.parse(dates[0])) / (365.25 * 864e5);
+    ticks += `<text x="${X(tv)}" y="${H - 6}" text-anchor="middle">${yr}</text>`;
+  }
+  const dots = series.map((v, i) => `<circle cx="${X(t[i]).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="1.7"/>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Ground motion in this block over time, in millimetres">
+    <g font-size="10" fill="#55656a">${ticks}</g>
+    <text x="${L}" y="${T - 1}" font-size="10" fill="#55656a">mm, compared with the area</text>
+    <g fill="#1e2b2f" fill-opacity="0.45">${dots}</g>
+    <line x1="${X(0)}" y1="${Y(b0)}" x2="${X(span)}" y2="${Y(b0 + rate * span)}" stroke="${col}" stroke-width="2.5"/>
+  </svg>`;
+}
+
+function describe(cell, data, placeName) {
+  const [lat, lon, n, rate, p25, p75, series] = cell;
+  const t = years(data.dates), span = t[t.length - 1];
+  const total = Math.abs(rate * span / 10);
+  let cls = "", verdict;
+  if (rate <= -SAME) {
+    cls = "sink";
+    verdict = `Sinking about <b>${Math.abs(rate).toFixed(1)} mm a year</b> faster than the area around it, about ${total.toFixed(1)} cm over ${span.toFixed(0)} years.`;
+  } else if (rate >= SAME) {
+    cls = "rise";
+    verdict = `Moving up about <b>${rate.toFixed(1)} mm a year</b> compared with the area around it, or sinking more slowly than it.`;
+  } else {
+    verdict = `Moving <b>about the same</b> as the area around it (${rate >= 0 ? "+" : "−"}${Math.abs(rate).toFixed(1)} mm a year).`;
+  }
+  const sizeM = Math.round(data.cell_m);
+  return `<p class="place">${placeName || `Near ${lat.toFixed(4)}, ${lon.toFixed(4)}`}</p>
+    <p class="verdict ${cls}">${verdict}</p>
+    ${chart(data.dates, series, rate)}
+    <p class="detail">Based on ${n} reliable ${Math.round(data.px_m || 30)} m squares in this ${sizeM} m block. Half of them move between
+      ${p25.toFixed(1)} and ${p75.toFixed(1)} mm a year compared with the area.</p>`;
+}
+
+function boxAround(cell, size) {
+  const [lat, lon] = cell;
+  const dLat = size / 2 / 111320, dLon = size / 2 / (111320 * Math.cos(lat * Math.PI / 180));
+  return [[lat - dLat, lon - dLon], [lat + dLat, lon + dLon]];
+}
+
+async function inspect(lat, lon, placeName) {
+  state.last = { lat, lon, placeName };
+  let data;
+  try {
+    data = await cellsFor(state.region, state.version);
+  } catch (e) {
+    reading.innerHTML = `<p class="empty">The map data didn't load (${e.message}). Reload the page to try again.</p>`;
+    return;
+  }
+  const cell = nearestCell(data, lat, lon);
+  if (state.box) { map.removeLayer(state.box); state.box = null; }
+  if (!cell) {
+    const b = state.meta.regions[state.region].bounds;
+    const outside = lat < b[0][0] || lat > b[1][0] || lon < b[0][1] || lon > b[1][1];
+    reading.innerHTML = outside
+      ? `<p class="empty">That point is outside the ${state.meta.regions[state.region].label} map. Pick a spot inside the coloured area.</p>`
+      : `<p class="empty">No reliable measurements here. Water, fields and trees scatter the radar too much to measure; try a nearby built-up area.</p>`;
+    return;
+  }
+  state.box = L.rectangle(boxAround(cell, data.cell_m), { color: "#9a7425", weight: 2, fill: false }).addTo(map);
+  reading.innerHTML = describe(cell, data, placeName);
+}
+
+map.on("click", (e) => inspect(e.latlng.lat, e.latlng.lng));
+
+document.querySelectorAll(".seg button").forEach((b) =>
+  b.addEventListener("click", () => { if (b.dataset.region !== state.region) showRegion(b.dataset.region); }));
+
+$("tilt").addEventListener("change", (e) => {
+  state.version = e.target.checked ? "tilt" : "plain";
+  const last = state.last;
+  showRegion(state.region, false);
+  if (last) inspect(last.lat, last.lon, last.placeName);
+});
+
+$("opacity").addEventListener("input", (e) => state.overlay && state.overlay.setOpacity(+e.target.value));
+
+document.querySelector("form.search").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("q").value.trim();
+  if (!q) return;
+  const [[s, w], [n, ea]] = state.meta.regions[state.region].bounds;
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&bounded=1` +
+              `&viewbox=${w},${n},${ea},${s}&q=${encodeURIComponent(q)}`;
+  reading.innerHTML = '<p class="empty">Searching…</p>';
+  try {
+    const res = await getJSON(url);
+    if (!res.length) {
+      reading.innerHTML = `<p class="empty">No match inside the ${state.meta.regions[state.region].label} map. Try a street address or a neighbourhood name.</p>`;
+      return;
+    }
+    const lat = +res[0].lat, lon = +res[0].lon;
+    map.setView([lat, lon], 15);
+    inspect(lat, lon, res[0].display_name.split(",").slice(0, 3).join(","));
+  } catch (err) {
+    reading.innerHTML = '<p class="empty">Address search isn\'t responding right now. Click the map instead.</p>';
+  }
+});
+
+getJSON("data/regions.json").then((meta) => {
+  state.meta = meta;
+  legendBar(meta.limit);
+  showRegion("frisco");
+}).catch((e) => {
+  reading.innerHTML = `<p class="empty">The map data didn't load (${e.message}). If you opened this file directly, run a local server instead (see the README).</p>`;
+});
+</script>
+</body>
+</html>
