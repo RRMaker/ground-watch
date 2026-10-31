@@ -88,14 +88,6 @@ python -m http.server 8000 --directory docs   # then open http://localhost:8000
 
 The downloads take hours on home Wi-Fi; everything after that takes minutes.
 
-## How I used AI
-
-I built this with heavy help from Claude, an AI assistant. It wrote most of the pipeline and
-website code and explained the radar and InSAR concepts. I ran every step, found the problems
-by looking at the output (the fake area-wide sinking, the too-fast Houston numbers, the frozen
-downloads), compared results against NASA/ASF's portal, and made the calls about what to trust
-and what to show. I can walk through what each script does.
-
 ## Credits
 
 Ground-motion data: NASA JPL OPERA, contains modified Copernicus Sentinel data, via ASF DAAC.
